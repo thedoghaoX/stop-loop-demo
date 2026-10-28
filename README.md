@@ -1,55 +1,38 @@
-# 你的 AI 為什麼一直轉圈圈？因為它沒有人叫它停。
+# Close Loop for AI
 
-很多人用 AI 幫忙工作時都遇過同一種崩潰：  
-交代它做一件小事，你去倒杯水回來，發現它在同一個小錯裡面自己鬼打牆試了幾十次，事沒辦好，先把你這禮拜的額度跟時間全部燒光了。
+A tiny brake for AI coding loops. Copy **one file** (`stop_loop_guard.py`) into your project root. It needs only Python 3.8+ and `pytest`.
 
-**真正讓人敢放手交辦的 AI，不是永遠不會出錯，而是「它知道什麼時候該停」。**
+When you let an AI fix code in a loop, three things go wrong: it never stops, it keeps trying the same dead end, or it edits the tests so they pass. This guard applies three plain rules:
 
-我們給 AI 裝上了自動煞車（小迴圈），它只做兩件最實在的事：
-1. **做好就停**：請它整理一份電話名單（故意放一格空白沒填），第 1 步它發現空白格漏掉了，第 2 步補好全過，**當場自己收手停機**，不多說半句廢話。
-2. **卡住也停**：萬一遇到壞檔案或死胡同，它試了 2 次發現沒進展，**第 2 步就自動拉下煞車**請你看一下，絕對不會傻傻在裡面空轉 200 次燒你的錢。
+1. **All tests pass → stop.**
+2. **No progress for N rounds in a row → stop** (progress means the number of passing tests beats the best so far; it does not compare output text).
+3. **Any test-related file touched, added or deleted → that round is void** (`tests/`, any `conftest.py`, `test_*.py`, `pytest.ini`, `pyproject.toml`, ...).
 
----
+## Use
 
-## 終端機實際畫面（點開就懂，零技術黑話）
+```python
+from stop_loop_guard import run_with_brakes
 
-```text
-====================================================================
-【情境 1：修好就自己停】請 AI 整理名單電話，故意塞一格「空白沒填」測它
-====================================================================
+def step(i, feedback):          # your AI call: give it the pytest feedback, let it edit src/
+    ask_ai_to_fix(feedback)
 
-▶ 第 1 步（AI 初稿）：檢查 2/3 過關
-  ❌ 發現小錯：遇到空白沒填的格子 -> 應該顯示「（未填寫）」，但 AI 算出「」
-
-▶ 第 2 步（自動修正）：檢查 3/3 過關
-
-🛑 [它自己停了！] 3 項檢查全部過關，第 2 步立刻自動收手！
-   不會像一般 AI 已經做好了還在後面自己碎碎念、多燒你的額度。
-
-====================================================================
-【情境 2：卡住也自己停】如果遇到死胡同，它會不會傻傻轉圈圈把額度燒光？
-====================================================================
-  ⚠️ 一般沒裝煞車的 AI：會在原地自己重試 50～200 次，去倒杯水回來額度就見底了。
-  🛡️ 有裝煞車的小迴圈：
-  ▶ 第 1 次嘗試：卡在損毀的外部資料（過關數 2/3，沒有新進展）
-  ▶ 第 2 次嘗試：換一招還是卡在同一處（過關數 2/3，連續 2 次沒進展）
-
-🛑 [它自己停了！] 發現連續 2 次沒有新進展，自動拉下煞車並告訴你卡在哪裡。
-   幫你保住剩下 98% 的額度，每一分錢都花在真正有推進的地方。
+status, steps, feedback = run_with_brakes(step, root=".", max_steps=8, stall_limit=2)
+# status: done / stalled / tampered / budget
 ```
 
----
+`tampered` means a locked file changed. Check with `git status` and restore with `git checkout`; the guard never deletes anything for you.
 
-## 想自己跑跑看？（複製貼上，10 秒看到它自己喊停）
+## Try it without any AI
 
-```bash
-git clone https://github.com/thedoghaoX/stop-loop-demo.git && cd stop-loop-demo && python3 stop_loop_demo.py
+```
+pip install pytest
+python examples/try_guard.py
 ```
 
----
+`examples/fake_ai.py` plays six scripted "AI" behaviours against a small project with a real bug, and every round really runs pytest. Output is in `examples/out.txt`.
 
-## 9 秒短影音 ＆ 兩分鐘實測錄影腳本（從啟動到它自己喊停）
+## Known limits
 
-- **前 3 秒（痛點）**：「去倒杯水回來，你的 AI 還在原地轉圈圈燒你的額度嗎？因為沒有人叫它停。」
-- **中間 3 秒（抓錯修正）**：畫面跑上面那段名單整理，第 1 步發現漏了空白格，第 2 步自動補上過關。
-- **最後 3 秒（自己喊停瞬間）**：畫面跳出大字 **`🛑 [它自己停了！]`**——「修好 2 步就收手，卡住 2 步就煞車，額度全花在真的有進展的地方。」
+- It is a brake, not a fixer: it decides when to stop, not how to repair.
+- `pyproject.toml` is locked too. If your AI must edit dependencies, remove it from `LOCK_GLOBS`.
+- Python/pytest projects only for now.
